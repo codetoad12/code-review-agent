@@ -25,8 +25,8 @@ async def analyze_pr(request: AnalyzePRRequest):
     github_pr_handler = GithubPrHandler(request.repo_owner, 
                                         request.repo_name, 
                                         request.pr_number)
-    pr_info = github_pr_handler.get_pr_info()
+    final_payload = github_pr_handler.format_pr_data_to_pass_to_agent()
     return {"message": "Pull Request analyzed successfully", 
-            "pr_info": pr_info}
+            "final_payload": final_payload}
 
 
