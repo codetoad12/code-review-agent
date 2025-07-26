@@ -1,0 +1,18 @@
+# Core framework dependencies
+fastapi
+uvicorn
+pydantic
+
+# Code analysis tools
+ruff
+
+# LangChain and LLM dependencies
+langchain
+langchain-core
+langchain-google-genai
+langchain-openai
+python-dotenv
+
+# Optional: for development and testing
+pytest
+requests 

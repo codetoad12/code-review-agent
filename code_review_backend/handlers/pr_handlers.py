@@ -126,13 +126,14 @@ class GithubPrHandler:
     def format_file_info(self, file_info: dict):
         file_list = []
         if file_info:
+
             for file in file_info:
                 file_list.append({
                     'file_name':file['filename'],
                     'additions':file['additions'],
                     'deletions':file['deletions'],
                     'changes':file['changes'],
-                    'patch':file['patch'],
+                    'patch':file.get('patch', ''),
                     'status':file['status'],
                 })
             return file_list

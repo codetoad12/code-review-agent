@@ -14,6 +14,8 @@ from .linters.python_linter import PythonLinter
 from .linters.js_linter import JSLinter
 from .linters.go_linter import GoLinter
 from .linters.rust_linter import RustLinter
+from .bug_heuristics.python_heuristics import PythonBugHeuristics
+from .bug_agents.llm_bug_agent import LLMBugAgent
 
 
 class CodeQualityAnalyzer:
@@ -27,6 +29,8 @@ class CodeQualityAnalyzer:
         self.js_linter = JSLinter()
         self.go_linter = GoLinter()
         self.rust_linter = RustLinter()
+        self.python_bug_heuristics = PythonBugHeuristics()
+        self.llm_bug_agent = LLMBugAgent()
         self.language_map = {
             '.py': 'Python',
             '.js': 'JavaScript',
@@ -94,16 +98,35 @@ class CodeQualityAnalyzer:
         
         language = self._detect_language(filename)
         
+        # Get language-specific linting and heuristics first
+        lint_issues = []
+        heuristic_issues = []
+        
         if language == 'Python':
-            return self.python_linter.lint(filename, raw_code, changed_lines)
+            # Get Python-specific analysis
+            lint_issues = self.python_linter.lint(
+                filename, raw_code, changed_lines)
+            heuristic_issues = self.python_bug_heuristics.analyze(
+                filename, raw_code, changed_lines)
         elif language in ['JavaScript', 'TypeScript']:
-            return self.js_linter.lint(filename, raw_code, changed_lines)
+            lint_issues = self.js_linter.lint(filename, raw_code, changed_lines)
         elif language == 'Go':
-            return self.go_linter.lint(filename, raw_code, changed_lines)
+            lint_issues = self.go_linter.lint(filename, raw_code, changed_lines)
         elif language == 'Rust':
-            return self.rust_linter.lint(filename, raw_code, changed_lines)
-        else:
-            return self._analyze_with_llm(filename, patch)
+            lint_issues = self.rust_linter.lint(filename, raw_code, changed_lines)
+        
+        # Get LLM-based bug analysis for ALL languages
+        llm_issues = self.llm_bug_agent.analyze(
+            filename=filename,
+            code=raw_code,
+            changed_lines=changed_lines,
+            patch=patch,
+            lint_issues=lint_issues,
+            heuristic_issues=heuristic_issues
+        )
+        
+        # Combine all types of issues
+        return lint_issues + heuristic_issues + llm_issues
     
     def _is_migration_file(self, filename: str) -> bool:
         """

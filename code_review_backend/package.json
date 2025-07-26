@@ -1,0 +1,27 @@
+{
+  "name": "code-review-agent-backend",
+  "version": "1.0.0",
+  "description": "Node.js dependencies for code review agent linting tools",
+  "main": "index.js",
+  "scripts": {
+    "lint:js": "eslint --ext .js,.jsx,.ts,.tsx",
+    "lint:js:json": "eslint --format json --ext .js,.jsx,.ts,.tsx",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "eslint",
+    "linting",
+    "code-review",
+    "javascript",
+    "typescript"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.21.0",
+    "eslint-plugin-react": "^7.34.0",
+    "eslint-plugin-react-hooks": "^4.6.0"
+  }
+} 

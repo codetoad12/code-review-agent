@@ -90,16 +90,18 @@ class PythonBugHeuristics:
                 if key_access.strip().isdigit():
                     continue
                 
-                # Skip if it's a string literal being indexed
-                if var_name in ['str', 'string'] or key_access.startswith('"') or key_access.startswith("'"):
+                # Skip if it's a string literal being indexed (not dict access)
+                if var_name in ['str', 'string']:
                     continue
                 
                 # Check if this looks like dict access
                 # Heuristic: if key is quoted string or variable, likely dict
-                if (key_access.startswith('"') and key_access.endswith('"')) or \
-                   (key_access.startswith("'") and key_access.endswith("'")) or \
-                   (not key_access.isdigit() and ':' not in key_access):
-                    
+                is_string_key = (key_access.startswith('"') and key_access.endswith('"')) or \
+                               (key_access.startswith("'") and key_access.endswith("'"))
+                is_variable_key = (not key_access.isdigit() and ':' not in key_access 
+                                 and not (key_access.startswith('[') and key_access.endswith(']')))
+                
+                if is_string_key or is_variable_key:
                     issues.append({
                         'type': 'bug',
                         'line': line_num,
@@ -241,11 +243,11 @@ class PythonBugHeuristics:
         self, lines: List[str], changed_lines: List[int]
     ) -> List[Dict[str, Any]]:
         """
-        Detect attribute access that might fail with AttributeError.
+        Detect potentially unsafe attribute access that might fail with 
+        AttributeError.
         
-        Patterns:
-        - obj.attr without None check
-        - Chained attribute access: obj.attr1.attr2
+        Focuses on risky patterns while avoiding false positives from 
+        common framework patterns.
         """
         issues = []
         
@@ -270,26 +272,27 @@ class PythonBugHeuristics:
                 full_access = match.group(0)
                 base_obj = match.group(1)
                 
-                # Skip common safe patterns
-                if base_obj in ['self', 'cls', 'os', 'sys', 'json', 're']:
+                # Skip built-in safe patterns
+                if self._is_safe_attribute_pattern(base_obj, full_access, 
+                                                  stripped_line):
                     continue
                 
                 # Skip if there's already a None check
-                if f'if {base_obj}' in stripped_line or \
-                   f'{base_obj} is not None' in stripped_line or \
-                   f'{base_obj} and ' in stripped_line:
+                if (f'if {base_obj}' in stripped_line or 
+                   f'{base_obj} is not None' in stripped_line or 
+                   f'{base_obj} and ' in stripped_line):
                     continue
                 
-                # Count attribute levels
+                # Only flag risky patterns (3+ levels of pure attribute access)
                 attr_count = full_access.count('.')
                 
-                # Flag chained attribute access (more risky)
-                if attr_count >= 2:
+                # Check if it's mostly method calls vs attribute access
+                if attr_count >= 3 and self._is_risky_attribute_chain(full_access):
                     issues.append({
                         'type': 'bug',
                         'line': line_num,
                         'description': (
-                            f'Chained attribute access "{full_access}" '
+                            f'Deep chained attribute access "{full_access}" '
                             f'may raise AttributeError if any object '
                             f'in chain is None'
                         ),
@@ -300,4 +303,126 @@ class PythonBugHeuristics:
                         )
                     })
         
-        return issues 
+        return issues
+    
+    def _is_safe_attribute_pattern(self, base_obj: str, full_access: str, 
+                                  line: str) -> bool:
+        """
+        Check if this is a known safe attribute access pattern.
+        """
+        # Common safe base objects (modules, built-ins, framework objects)
+        safe_base_objects = {
+            'self', 'cls', 'super', 'os', 'sys', 'json', 're', 'datetime',
+            'settings', 'config', 'request', 'response', 'app', 'db',
+            'logger', 'log', 'math', 'random', 'time', 'uuid',
+            # Common modules that appear in imports/references
+            'django', 'flask', 'fastapi', 'requests', 'urllib', 'http',
+            'typing', 'collections', 'functools', 'itertools', 'pathlib'
+        }
+        
+        if base_obj in safe_base_objects:
+            return True
+        
+        # Check if this looks like a module import or class reference
+        if self._is_module_or_class_reference(full_access, line):
+            return True
+        
+        # Django ORM patterns
+        if '.objects.' in full_access:
+            return True
+        
+        # Method chaining patterns (safer than pure attribute access)
+        if '()' in line and full_access in line:
+            # Check if most of the chain consists of method calls
+            method_call_count = line.count('()')  
+            attr_count = full_access.count('.')
+            if method_call_count >= attr_count - 1:
+                return True
+        
+        # Common framework patterns
+        safe_patterns = [
+            '.Meta.', '.DoesNotExist', '.MultipleObjectsReturned',
+            '.cleaned_data.', '.is_valid', '.save', '.delete',
+            '.filter', '.exclude', '.get', '.create', '.update',
+            '.first', '.last', '.count', '.exists',
+            '.user.', '.session.', '.GET.', '.POST.',
+            '.status_code', '.content', '.headers',
+            '.pk', '.id', '.name', '.models.', '.db.'
+        ]
+        
+        for pattern in safe_patterns:
+            if pattern in full_access:
+                return True
+        
+        return False
+    
+    def _is_module_or_class_reference(self, full_access: str, line: str) -> bool:
+        """
+        Check if this looks like a static module path or class reference
+        rather than runtime attribute access.
+        """
+        # Class references often end with capitalized names
+        parts = full_access.split('.')
+        last_part = parts[-1]
+        
+        # If the last part is capitalized, likely a class reference
+        if last_part and last_part[0].isupper():
+            return True
+        
+        # Check for import statements specifically
+        stripped_line = line.strip()
+        if (stripped_line.startswith('import ') or 
+            stripped_line.startswith('from ') or
+            'import ' + full_access in line or
+            'from ' + full_access in line):
+            return True
+        
+        # Type-related function calls
+        if ('isinstance(' in line or 'issubclass(' in line or
+            'typing.' in line):
+            return True
+        
+        # Generic type hints in brackets
+        type_hint_patterns = ['Type[', 'Optional[', 'Union[', 'List[', 
+                             'Dict[', 'Tuple[', 'Set[']
+        for pattern in type_hint_patterns:
+            if pattern in line and full_access in line:
+                return True
+        
+        # Django field definitions (very specific context)
+        django_field_patterns = ['Field(', 'ForeignKey(', 'CharField(',
+                               'IntegerField(', 'BooleanField(']
+        for pattern in django_field_patterns:
+            if pattern in line and full_access in line:
+                return True
+        
+        # Type annotations (more specific check)
+        if ': ' in line and ' = ' in line:
+            colon_pos = line.find(': ')
+            equals_pos = line.find(' = ')
+            if colon_pos < equals_pos and full_access in line[colon_pos:equals_pos]:
+                return True
+        
+        # Function return type annotations
+        if '-> ' in line and full_access in line:
+            return True
+        
+        return False
+    
+    def _is_risky_attribute_chain(self, full_access: str) -> bool:
+        """
+        Determine if this is a risky attribute chain (pure attribute access
+        without method calls).
+        """
+        # If it contains common method names, it's likely safer
+        safe_method_endings = [
+            'get', 'filter', 'save', 'delete', 'create', 'update',
+            'first', 'last', 'count', 'exists', 'is_valid'
+        ]
+        
+        for method in safe_method_endings:
+            if full_access.endswith(f'.{method}'):
+                return False
+        
+        # Count dots - only flag very deep chains
+        return full_access.count('.') >= 3 

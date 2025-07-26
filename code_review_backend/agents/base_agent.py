@@ -21,13 +21,17 @@ class BaseAgent:
     then formats the results according to the project specification.
     """
     
-    def __init__(self, analyzers: Optional[List] = None, final_payload: Dict[str, Any] = None,):
+    def __init__(self, analyzers: Optional[List] = None, final_payload: Dict[str, Any] = None):
         """
-        Initialize BaseAgent with a list of analyzers.
+        Initialize BaseAgent with a list of analyzers and PR data.
         
         Args:
             analyzers: List of analyzer instances. Defaults to CodeQualityAnalyzer.
+            final_payload: The structured data from format_pr_data_to_pass_to_agent()
         """
+        if final_payload is None:
+            raise ValueError('final_payload is required for BaseAgent initialization')
+            
         self.final_payload = final_payload
         self.pr_metadata = self._extract_pr_metadata()
         self.files_data = self._extract_files_data()
@@ -55,13 +59,16 @@ class BaseAgent:
             # Extract changed line numbers from patch
             changed_lines = self._extract_changed_lines(file_info.get('patch', ''))
             
+            # Extract actual code content from patch (temporary solution)
+            raw_code = self._extract_code_from_patch(file_info.get('patch', ''))
+            
             # Collect issues from all analyzers for this file
             issues = []
             for analyzer in self.analyzers:
                 file_issues = analyzer.analyze(
                     filename=file_info['file_name'],
                     patch=file_info.get('patch', ''),
-                    raw_code=file_info.get('patch', ''),  # TODO: Fetch full file content
+                    raw_code=raw_code,
                     changed_lines=changed_lines
                 )
                 issues.extend(file_issues)
@@ -162,6 +169,45 @@ class BaseAgent:
                 current_line += 1
         
         return sorted(list(set(changed_lines)))
+    
+    def _extract_code_from_patch(self, patch: str) -> str:
+        """
+        Extract the actual code content from a git patch.
+        
+        This is a temporary solution that extracts added/modified lines
+        from the patch. Ideally, we should fetch the full file content
+        from GitHub API.
+        
+        Args:
+            patch: Git patch content from GitHub API
+            
+        Returns:
+            Extracted code content (added lines only)
+        """
+        if not patch:
+            return ''
+        
+        code_lines = []
+        
+        for line in patch.split('\n'):
+            # Skip diff headers and context
+            if (line.startswith('@@') or 
+                line.startswith('+++') or 
+                line.startswith('---') or
+                line.startswith('\\') or
+                line.startswith('diff')):
+                continue
+            
+            # Extract added lines (remove the + prefix)
+            if line.startswith('+'):
+                code_lines.append(line[1:])  # Remove the '+' prefix
+            # Include unchanged context lines (no prefix)
+            elif not line.startswith('-'):
+                # Only include if it doesn't start with - (deleted lines)
+                if line:  # Skip empty lines that might be diff artifacts
+                    code_lines.append(line)
+        
+        return '\n'.join(code_lines)
     
     def _format_output(self, file_reviews: List[Dict[str, Any]], 
                       pr_metadata: Dict[str, Any]) -> Dict[str, Any]:
