@@ -88,63 +88,86 @@ class PythonLinter:
     def _run_ruff_check(self, filename: str, raw_code: str, 
                        changed_lines: List[int]) -> List[Dict[str, Any]]:
         """Run ruff check command and parse results."""
+        temp_file_path = None
         try:
             with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as temp_file:
                 temp_file.write(raw_code)
                 temp_file.flush()
+                temp_file_path = temp_file.name
+            
+            # Run ruff check with JSON output
+            result = subprocess.run([
+                'ruff', 'check', 
+                temp_file_path,
+                '--output-format', 'json',
+                '--no-fix'
+            ], capture_output=True, text=True, timeout=30)
+            
+            if result.returncode in [0, 1]:  # 0 = no issues, 1 = issues found
+                return self._parse_ruff_check_output(result.stdout, changed_lines)
+            else:
+                print(f'Ruff check failed: {result.stderr}')
+                return []
                 
-                # Run ruff check with JSON output
-                result = subprocess.run([
-                    'ruff', 'check', 
-                    temp_file.name,
-                    '--output-format', 'json',
-                    '--no-fix'
-                ], capture_output=True, text=True, timeout=30)
-                
-                os.unlink(temp_file.name)
-                
-                if result.returncode in [0, 1]:  # 0 = no issues, 1 = issues found
-                    return self._parse_ruff_check_output(result.stdout, changed_lines)
-                else:
-                    print(f'Ruff check failed: {result.stderr}')
-                    return []
-                    
         except Exception as e:
             print(f'Error running ruff check: {e}')
             return []
+        finally:
+            # Clean up temp file
+            if temp_file_path and os.path.exists(temp_file_path):
+                try:
+                    os.unlink(temp_file_path)
+                except OSError as e:
+                    print(f'Warning: Could not delete temp file {temp_file_path}: {e}')
     
     def _run_ruff_format(self, filename: str, raw_code: str, 
                         changed_lines: List[int]) -> List[Dict[str, Any]]:
-        """Run ruff format check and identify formatting issues."""
+        """Run ruff format check and identify specific formatting issues."""
+        temp_file_path = None
         try:
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as temp_file:
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as temp_file:
                 temp_file.write(raw_code)
                 temp_file.flush()
+                temp_file_path = temp_file.name
+            
+            # Check if file needs formatting
+            result = subprocess.run([
+                'ruff', 'format',
+                '--check',
+                '--diff',  # Show what would change
+                temp_file_path
+            ], capture_output=True, text=True, timeout=30)
+            
+            if result.returncode == 1:  # File needs formatting
+                # Try to get more specific information from the diff
+                diff_output = result.stdout.strip()
                 
-                # Check if file needs formatting
-                result = subprocess.run([
-                    'ruff', 'format',
-                    '--check',
-                    temp_file.name
-                ], capture_output=True, text=True, timeout=30)
+                if diff_output:
+                    # Parse the diff to identify specific issues
+                    formatting_issues = self._parse_format_diff(diff_output, changed_lines)
+                    if formatting_issues:
+                        return formatting_issues
                 
-                os.unlink(temp_file.name)
-                
-                if result.returncode == 1:  # File needs formatting
-                    # For simplicity, report a general formatting issue
-                    # In practice, we could diff the formatted vs original
-                    return [{
-                        'type': 'style',
-                        'line': min(changed_lines) if changed_lines else 1,
-                        'description': 'File formatting does not comply with standards',
-                        'suggestion': 'Run `ruff format` to fix formatting issues'
-                    }]
-                
-                return []
+                # Fallback to generic message if we can't parse specifics
+                return [{
+                    'type': 'style',
+                    'line': min(changed_lines) if changed_lines else 1,
+                    'description': 'Code formatting can be improved',
+                    'suggestion': 'Run `ruff format` to automatically fix formatting issues'
+                }]
+            
+            return []
                 
         except Exception as e:
             print(f'Error running ruff format: {e}')
             return []
+        finally:
+            # Clean up temp file
+            if temp_file_path and os.path.exists(temp_file_path):
+                try:
+                    os.unlink(temp_file_path)
+                except OSError as e:
+                    print(f'Warning: Could not delete temp file {temp_file_path}: {e}')
     
     def _parse_ruff_check_output(self, output: str, 
                                 changed_lines: List[int]) -> List[Dict[str, Any]]:
@@ -233,3 +256,85 @@ class PythonLinter:
                 })
         
         return issues 
+
+    def _parse_format_diff(self, diff_output: str, changed_lines: List[int]) -> List[Dict[str, Any]]:
+        """
+        Parse ruff format diff output to identify specific formatting issues.
+        
+        Args:
+            diff_output: The diff output from ruff format --diff
+            changed_lines: Lines that were changed in the PR
+            
+        Returns:
+            List of specific formatting issues
+        """
+        issues = []
+        lines = diff_output.split('\n')
+        
+        current_line = 0
+        for line in lines:
+            # Look for line number indicators in diff
+            if line.startswith('@@'):
+                # Extract line number from hunk header like @@ -1,4 +1,4 @@
+                import re
+                match = re.search(r'\+(\d+)', line)
+                if match:
+                    current_line = int(match.group(1))
+                continue
+                    
+            # Check for specific formatting changes
+            if line.startswith('-') and not line.startswith('---'):
+                # This is the original (incorrectly formatted) line
+                original = line[1:]  # Remove the '-' prefix
+                current_line += 1
+                
+                # Only report issues on changed lines
+                if changed_lines and current_line not in changed_lines:
+                    continue
+                
+                # Try to identify the type of formatting issue
+                issue_desc = self._identify_formatting_issue(original, diff_output)
+                
+                issues.append({
+                    'type': 'style',
+                    'line': current_line,
+                    'description': issue_desc,
+                    'suggestion': 'Run `ruff format` to fix formatting'
+                })
+                
+            elif line.startswith('+') and not line.startswith('+++'):
+                # Skip the correctly formatted version
+                continue
+                
+        return issues
+    
+    def _identify_formatting_issue(self, original_line: str, context: str) -> str:
+        """
+        Try to identify the specific type of formatting issue.
+        
+        Args:
+            original_line: The original (incorrectly formatted) line
+            context: Full diff context for additional clues
+            
+        Returns:
+            Description of the formatting issue
+        """
+        # Check for common formatting issues
+        
+        if original_line.rstrip() != original_line:
+            return 'Trailing whitespace detected'
+            
+        if '\t' in original_line:
+            return 'Tab characters should be replaced with spaces'
+            
+        if original_line.startswith(' ' * 8) and '    ' not in original_line:
+            return 'Inconsistent indentation (should use 4 spaces)'
+            
+        if '"' in original_line and "'" in original_line:
+            return 'Inconsistent quote usage'
+            
+        if len(original_line) > 88:  # Ruff default line length
+            return f'Line too long ({len(original_line)} characters)'
+            
+        # Generic fallback
+        return 'Code formatting can be improved' 
