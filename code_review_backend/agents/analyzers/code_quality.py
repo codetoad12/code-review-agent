@@ -16,6 +16,7 @@ from .linters.go_linter import GoLinter
 from .linters.rust_linter import RustLinter
 from .bug_heuristics.python_heuristics import PythonBugHeuristics
 from .bug_agents.llm_bug_agent import LLMBugAgent
+from .performance_agents.llm_performance_agent import LLMPerformanceAgent
 
 
 class CodeQualityAnalyzer:
@@ -31,6 +32,7 @@ class CodeQualityAnalyzer:
         self.rust_linter = RustLinter()
         self.python_bug_heuristics = PythonBugHeuristics()
         self.llm_bug_agent = LLMBugAgent()
+        self.llm_performance_agent = LLMPerformanceAgent()
         self.language_map = {
             '.py': 'Python',
             '.js': 'JavaScript',
@@ -125,8 +127,19 @@ class CodeQualityAnalyzer:
             heuristic_issues=heuristic_issues
         )
         
+        # Get LLM-based performance analysis for ALL languages
+        performance_issues = self.llm_performance_agent.analyze(
+            filename=filename,
+            code=raw_code,
+            changed_lines=changed_lines,
+            patch=patch,
+            language=language,
+            lint_issues=lint_issues,
+            bug_issues=llm_issues
+        )
+        
         # Combine all types of issues
-        return lint_issues + heuristic_issues + llm_issues
+        return lint_issues + heuristic_issues + llm_issues + performance_issues
     
     def _is_migration_file(self, filename: str) -> bool:
         """
