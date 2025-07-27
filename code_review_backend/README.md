@@ -1,193 +1,290 @@
-# Code Review Agent Backend
+# Code Review Agent
 
-An autonomous code review agent system that uses AI to analyze GitHub pull requests. The system implements a goal-oriented AI agent that can plan and execute code reviews independently and provides structured feedback through a REST API.
+An autonomous AI-powered code review agent that analyzes GitHub pull requests asynchronously using Celery and Redis.
 
 ## Features
 
-- 🔍 **Multi-language Support**: Python, JavaScript, TypeScript, Go, Rust
-- 🚀 **Synchronous Processing**: Direct API responses (Celery integration planned)
-- 🛠️ **Smart Linting**: Language-specific linters with LLM fallback
-- 📝 **Migration Filtering**: Automatically skips migration files
-- 🔗 **GitHub Integration**: Fetches PR data, files, comments, and reviews
-- 📊 **Structured Output**: Standardized issue reporting format
+- **Asynchronous Processing**: Uses Celery for background task processing
+- **Multi-language Support**: Python, JavaScript, TypeScript, Go, Rust
+- **AI-Powered Analysis**: Detects bugs, performance issues, and style problems
+- **Task Tracking**: Monitor analysis progress with task IDs
+- **Docker Support**: Complete containerized deployment
+- **RESTful API**: Clean API endpoints for integration
 
-## Tech Stack
-
-- **Backend**: FastAPI (Python)
-- **Linting Tools**: 
-  - Python: Ruff
-  - JavaScript/TypeScript: ESLint
-  - Go: golangci-lint (planned)
-  - Rust: clippy (planned)
-- **GitHub API**: httpx client
-- **AI/LLM**: Planned integration with Langchain + Gemini
-
-## Project Structure
+## Architecture
 
 ```
-code_review_backend/
-├── agents/
-│   ├── base_agent.py           # Main orchestrator
-│   └── analyzers/
-│       ├── code_quality.py     # Language dispatcher
-│       └── linters/
-│           ├── python_linter.py    # Ruff integration
-│           └── js_linter.py        # ESLint integration (planned)
-├── handlers/
-│   └── pr_handlers.py          # GitHub API integration
-├── routes/
-│   └── pr.py                   # API endpoints
-├── main.py                     # FastAPI application
-├── package.json                # Node.js dependencies
-└── README.md                   # This file
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│   FastAPI   │───▶│    Redis    │◀───│   Celery    │
+│   Server    │    │   Message   │    │   Worker    │
+│             │    │   Broker    │    │             │
+└─────────────┘    └─────────────┘    └─────────────┘
 ```
 
-## Setup Instructions
+## Quick Start
 
-### 1. Python Dependencies
+### Using Docker Compose (Recommended)
 
+1. **Clone and navigate to the project:**
 ```bash
-# Create virtual environment (recommended)
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install Python dependencies
-pip install fastapi httpx pydantic uvicorn ruff
+cd code_review_backend
 ```
 
-### 2. Node.js Dependencies (for JavaScript linting)
-
+2. **Start all services:**
 ```bash
-# Install Node.js dependencies
-npm install
-
-# Verify ESLint installation
-npx eslint --version
+docker-compose up --build
 ```
 
-### 3. Environment Configuration
+This will start:
+- FastAPI server on `http://localhost:8000`
+- Redis on `localhost:6379`
+- Celery worker for processing tasks
 
-Create a `.env` file in the project root:
+### Manual Setup
 
+1. **Install Redis:**
 ```bash
-# GitHub API token (optional but recommended for higher rate limits)
-GITHUB_TOKEN=your_github_token_here
+# On macOS
+brew install redis
+redis-server
+
+# On Ubuntu
+sudo apt install redis-server
+sudo systemctl start redis
 ```
 
-### 4. Run the Application
-
+2. **Install Python dependencies:**
 ```bash
-# Start the FastAPI development server
+pip install -r requirements.txt
+```
+
+3. **Start the services:**
+
+Terminal 1 - FastAPI server:
+```bash
+cd code_review_backend
 uvicorn main:app --reload --port 8000
+```
 
-# The API will be available at http://localhost:8000
-# API documentation at http://localhost:8000/docs
+Terminal 2 - Celery worker:
+```bash
+cd code_review_backend
+celery -A celery_app worker --loglevel=info
 ```
 
 ## API Endpoints
 
-### Analyze Pull Request
+### 1. Start PR Analysis
 
-**POST** `/analyze_pr`
+**POST** `/api/v1/analyze-pr`
 
-Analyzes a GitHub pull request and returns code review results.
+Start asynchronous analysis of a GitHub pull request.
 
-**Request Body:**
+**Request:**
 ```json
 {
-  "repo_owner": "username",
-  "repo_name": "repository",
-  "pr_number": 123
+  "repo_owner": "facebook",
+  "repo_name": "react",
+  "pr_number": 12345
 }
 ```
 
 **Response:**
 ```json
 {
-  "message": "PR analysis completed",
+  "task_id": "550e8400-e29b-41d4-a716-446655440000",
+  "message": "PR analysis started",
+  "status": "pending"
+}
+```
+
+### 2. Check Task Status
+
+**GET** `/api/v1/status/{task_id}`
+
+Check the current status of an analysis task.
+
+**Response:**
+```json
+{
+  "task_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "processing",
+  "message": "Analyzing code with AI agents..."
+}
+```
+
+Possible statuses:
+- `pending`: Task is queued
+- `processing`: Task is being executed
+- `completed`: Task finished successfully
+- `failed`: Task encountered an error
+
+### 3. Get Results
+
+**GET** `/api/v1/results/{task_id}`
+
+Retrieve the analysis results for a completed task.
+
+**Response:**
+```json
+{
+  "task_id": "550e8400-e29b-41d4-a716-446655440000",
   "status": "completed",
   "results": {
-    "task_id": "uuid",
-    "status": "completed",
-    "results": {
-      "files": [
-        {
-          "name": "src/example.py",
-          "issues": [
-            {
-              "type": "style",
-              "line": 42,
-              "description": "Line too long (85 > 79 characters)",
-              "suggestion": "Break line into multiple lines"
-            }
-          ]
-        }
-      ],
-      "summary": {
-        "total_files": 1,
-        "total_issues": 1,
-        "critical_issues": 0
+    "files": [
+      {
+        "name": "src/components/Button.tsx",
+        "issues": [
+          {
+            "type": "style",
+            "line": 42,
+            "description": "Line too long (85 > 79 characters)",
+            "suggestion": "Break line into multiple lines"
+          },
+          {
+            "type": "bug",
+            "line": 23,
+            "description": "Potential null pointer exception",
+            "suggestion": "Add null check before accessing property"
+          }
+        ]
       }
+    ],
+    "summary": {
+      "total_files": 1,
+      "total_issues": 2,
+      "critical_issues": 1
     }
-  }
+  },
+  "message": "Analysis completed successfully"
 }
+```
+
+## Example Usage
+
+```bash
+# 1. Start analysis
+curl -X POST "http://localhost:8000/api/v1/analyze-pr" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repo_owner": "facebook",
+    "repo_name": "react", 
+    "pr_number": 12345
+  }'
+
+# Response: {"task_id": "abc123...", "status": "pending"}
+
+# 2. Check status
+curl "http://localhost:8000/api/v1/status/abc123..."
+
+# 3. Get results (when completed)
+curl "http://localhost:8000/api/v1/results/abc123..."
+```
+
+## Configuration
+
+### Environment Variables
+
+Create a `.env` file:
+
+```env
+# Redis Configuration
+REDIS_URL=redis://localhost:6379/0
+
+# GitHub API (optional, for higher rate limits)
+GITHUB_TOKEN=your_github_token_here
+
+# LLM Configuration (choose one)
+OPENAI_API_KEY=your_openai_key
+ANTHROPIC_API_KEY=your_anthropic_key
+```
+
+### Celery Configuration
+
+The Celery worker can be customized:
+
+```bash
+# Run with specific concurrency
+celery -A celery_app worker --loglevel=info --concurrency=4
+
+# Run specific queues
+celery -A celery_app worker --loglevel=info --queues=analysis
+
+# Monitor tasks
+celery -A celery_app flower
 ```
 
 ## Supported Languages
 
-| Language       | Linter         | Status      |
-|----------------|----------------|-------------|
-| Python         | Ruff           | ✅ Implemented |
-| JavaScript     | ESLint         | 🚧 In Progress |
-| TypeScript     | ESLint         | 🚧 In Progress |
-| Go             | golangci-lint  | 📋 Planned |
-| Rust           | clippy         | 📋 Planned |
+| Language   | Linter        | AI Analysis | Status |
+|------------|---------------|-------------|---------|
+| Python     | Ruff          | ✅          | ✅      |
+| JavaScript | ESLint        | ✅          | 🚧      |
+| TypeScript | ESLint        | ✅          | 🚧      |
+| Go         | golangci-lint | ✅          | 📋      |
+| Rust       | clippy        | ✅          | 📋      |
 
 ## Development
 
 ### Running Tests
 
 ```bash
-# Python tests (when implemented)
-pytest
-
-# JavaScript linting test
-npm run lint:js
+pytest tests/ -v
 ```
 
-### Adding New Linters
+### Adding New Analyzers
 
-1. Create a new linter class in `agents/analyzers/linters/`
-2. Implement the standard interface: `lint(filename, raw_code, changed_lines)`
-3. Update the language mapping in `code_quality.py`
-4. Add language detection patterns
+1. Create analyzer in `agents/analyzers/`
+2. Register in `agents/analyzers/pipeline.py`
+3. Add configuration in `celery_app.py`
 
-### Migration File Filtering
+### Monitoring
 
-The system automatically excludes common migration file patterns:
+- **Health Check**: `GET /health`
+- **API Docs**: `http://localhost:8000/docs`
+- **Redis Monitoring**: Use Redis CLI or GUI tools
+- **Celery Monitoring**: Install Flower for web-based monitoring
 
-- Django: `**/migrations/*.py`
-- Rails: `db/migrate/*.rb`
-- Laravel: `database/migrations/*.php`
-- Node.js: `**/migrations/*.{js,ts}`
-- Alembic: `alembic/versions/*.py`
+## Deployment
 
-## Future Enhancements
+### Production Docker Setup
 
-- [ ] Celery + Redis integration for async processing
-- [ ] LLM-based analysis for unsupported languages
-- [ ] Advanced GitHub integration (posting review comments)
-- [ ] Configuration file support for custom linting rules
-- [ ] Performance metrics and caching
-- [ ] Docker containerization
+```yaml
+version: '3.8'
+services:
+  web:
+    image: your-registry/code-review-agent:latest
+    ports:
+      - "80:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+    depends_on:
+      - redis
+
+  worker:
+    image: your-registry/code-review-agent:latest
+    command: celery -A celery_app worker --loglevel=info
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:latest
+    volumes:
+      - redis_data:/data
+
+volumes:
+  redis_data:
+```
 
 ## Contributing
 
 1. Fork the repository
 2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+3. Add tests for new functionality
+4. Submit a pull request
 
 ## License
 
