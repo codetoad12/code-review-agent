@@ -15,17 +15,27 @@ services:
       - '8000:8000'
     environment:
       - REDIS_URL=redis://redis:6379/0
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
     depends_on:
       - redis
+    volumes:
+      - ./code_review_backend:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     restart: unless-stopped
-    command: uvicorn main:app --host 0.0.0.0 --port 8000
 
   worker:
     build: ./code_review_backend
     container_name: code_review_worker
     environment:
       - REDIS_URL=redis://redis:6379/0
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
     depends_on:
       - redis
-    restart: unless-stopped
+    volumes:
+      - ./code_review_backend:/app
     command: python -m celery -A celery_app worker --loglevel=info
+    restart: unless-stopped

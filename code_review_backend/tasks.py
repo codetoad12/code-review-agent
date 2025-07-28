@@ -1,5 +1,8 @@
 """
 Celery tasks for asynchronous PR analysis.
+
+This version integrates with the LangGraph-based code review agent
+for sophisticated workflow orchestration.
 """
 import traceback
 from typing import Dict, Any
@@ -59,11 +62,11 @@ def analyze_pr_task(self, repo_owner: str, repo_name: str, pr_number: int) -> Di
             meta={'message': 'Analyzing code with AI agents...'}
         )
         
-        # Initialize the BaseAgent with the PR data
+        # Initialize the BaseAgent with the PR data (now using LangGraph)
         try:
             agent = BaseAgent(final_payload=final_payload)
             
-            # Perform the analysis
+            # Perform the analysis using LangGraph workflow
             analysis_result = agent.review()
             
             # Ensure the result is JSON serializable

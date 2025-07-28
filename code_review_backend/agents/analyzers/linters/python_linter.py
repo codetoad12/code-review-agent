@@ -61,6 +61,10 @@ class PythonLinter:
         Returns:
             List of issues in standard format
         """
+        # Skip migration files - they are auto-generated and shouldn't be linted
+        if self._is_migration_file(filename):
+            return []
+        
         if not self.ruff_available:
             return self._fallback_analysis(filename, raw_code, changed_lines)
         
@@ -84,6 +88,41 @@ class PythonLinter:
             return result.returncode == 0
         except (subprocess.TimeoutExpired, FileNotFoundError):
             return False
+    
+    def _is_migration_file(self, filename: str) -> bool:
+        """
+        Check if a file is a migration file that should be skipped.
+        
+        Args:
+            filename: The filename to check
+            
+        Returns:
+            True if the file is a migration file, False otherwise
+        """
+        filename_lower = filename.lower()
+        path_parts = Path(filename).parts
+        file_name = Path(filename).name.lower()
+        
+        # Don't skip test files - they should be linted
+        if 'test' in file_name or 'test' in path_parts:
+            return False
+        
+        # Check for Django migration patterns - files in migrations directory
+        if 'migrations' in path_parts:
+            return True
+        
+        # Check for SQLAlchemy Alembic migrations
+        if 'alembic' in path_parts and 'versions' in path_parts:
+            return True
+        
+        # Check for specific migration file patterns
+        migration_keywords = ['migrate', 'migration', 'schema']
+        
+        for keyword in migration_keywords:
+            if keyword in filename_lower:
+                return True
+        
+        return False
     
     def _run_ruff_check(self, filename: str, raw_code: str, 
                        changed_lines: List[int]) -> List[Dict[str, Any]]:
@@ -229,6 +268,10 @@ class PythonLinter:
         Fallback analysis when ruff is not available.
         Performs basic Python syntax and style checks.
         """
+        # Skip migration files even in fallback analysis
+        if self._is_migration_file(filename):
+            return []
+        
         issues = []
         
         lines = raw_code.split('\n')

@@ -4,12 +4,15 @@ BaseAgent Implementation for Code Review
 The BaseAgent class acts as the orchestrator for code analysis. It accepts 
 the final_payload from format_pr_data_to_pass_to_agent() and runs analyzers
 over each file in the PR.
+
+This version now uses LangGraph for sophisticated workflow orchestration.
 """
 
 import re
 import uuid
 from typing import List, Dict, Any, Optional
 
+from .langgraph_agent import LangGraphCodeReviewAgent
 from .analyzers.code_quality import CodeQualityAnalyzer
 
 
@@ -19,6 +22,9 @@ class BaseAgent:
     
     Accepts the final_payload from pr_handlers.py and dispatches to analyzers,
     then formats the results according to the project specification.
+    
+    This class now serves as a wrapper around the LangGraph-based implementation
+    for backward compatibility.
     """
     
     def __init__(self, analyzers: Optional[List] = None, final_payload: Dict[str, Any] = None):
@@ -26,13 +32,18 @@ class BaseAgent:
         Initialize BaseAgent with a list of analyzers and PR data.
         
         Args:
-            analyzers: List of analyzer instances. Defaults to CodeQualityAnalyzer.
+            analyzers: List of analyzer instances (deprecated, kept for compatibility)
             final_payload: The structured data from format_pr_data_to_pass_to_agent()
         """
         if final_payload is None:
             raise ValueError('final_payload is required for BaseAgent initialization')
             
         self.final_payload = final_payload
+        
+        # Initialize the LangGraph-based agent
+        self.langgraph_agent = LangGraphCodeReviewAgent(final_payload)
+        
+        # Keep old attributes for backward compatibility
         self.pr_metadata = self._extract_pr_metadata()
         self.files_data = self._extract_files_data()
         self.existing_context = self._extract_existing_context()
@@ -42,44 +53,14 @@ class BaseAgent:
         """
         Review a pull request by analyzing all files with all analyzers.
         
-        Args:
-            final_payload: The structured data from format_pr_data_to_pass_to_agent()
-                          containing summary, file_info, existing_reviews, existing_comments
+        This method now delegates to the LangGraph-based agent for sophisticated
+        workflow orchestration and state management.
             
         Returns:
             Structured review results matching projectcontext.mdc format
         """
-        # Segregate the payload data into respective components
-
-        
-        # Analyze each file
-        file_reviews = []
-        
-        for file_info in self.files_data:
-            # Extract changed line numbers from patch
-            changed_lines = self._extract_changed_lines(file_info.get('patch', ''))
-            
-            # Extract actual code content from patch (temporary solution)
-            raw_code = self._extract_code_from_patch(file_info.get('patch', ''))
-            
-            # Collect issues from all analyzers for this file
-            issues = []
-            for analyzer in self.analyzers:
-                file_issues = analyzer.analyze(
-                    filename=file_info['file_name'],
-                    patch=file_info.get('patch', ''),
-                    raw_code=raw_code,
-                    changed_lines=changed_lines
-                )
-                issues.extend(file_issues)
-            
-            # Add file review to results
-            file_reviews.append({
-                'name': file_info['file_name'],
-                'issues': issues
-            })
-        
-        return self._format_output(file_reviews, self.pr_metadata)
+        # Delegate to the LangGraph agent
+        return self.langgraph_agent.review()
     
     def _extract_pr_metadata(self) -> Dict[str, Any]:
         """
