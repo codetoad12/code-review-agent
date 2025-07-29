@@ -1,0 +1,6 @@
+# Ignore everything by default
+*
+
+# Except our app folder and Dockerfile
+!code_review_backend/
+!Dockerfile
