@@ -2,6 +2,15 @@
 
 An autonomous AI-powered code review agent that analyzes GitHub pull requests asynchronously using Celery and Redis.
 
+## 🚀 **NEW: LangGraph-Based Architecture**
+
+This project now uses **LangGraph** for sophisticated workflow orchestration, providing:
+- **Stateful Graph Workflows**: Complex analysis pipelines with state management
+- **Better Agent Collaboration**: Seamless integration between different analyzers
+- **Cyclic Processing**: Support for iterative analysis and feedback loops
+- **Advanced Orchestration**: Graph-based execution with conditional logic
+- **Built-in Memory**: Persistent state across analysis steps
+
 ## Features
 
 - **Asynchronous Processing**: Uses Celery for background task processing
@@ -10,6 +19,7 @@ An autonomous AI-powered code review agent that analyzes GitHub pull requests as
 - **Task Tracking**: Monitor analysis progress with task IDs
 - **Docker Support**: Complete containerized deployment
 - **RESTful API**: Clean API endpoints for integration
+- **LangGraph Workflows**: Sophisticated multi-agent orchestration
 
 ## Architecture
 
@@ -19,6 +29,19 @@ An autonomous AI-powered code review agent that analyzes GitHub pull requests as
 │   Server    │    │   Message   │    │   Worker    │
 │             │    │   Broker    │    │             │
 └─────────────┘    └─────────────┘    └─────────────┘
+       │                                      │
+       └──────────────────┐                  │
+                          ▼                  ▼
+                   ┌─────────────────────────────┐
+                   │     LangGraph Agent         │
+                   │  ╭─────────────────────╮    │
+                   │  │ 1. Lint Analysis    │    │
+                   │  │ 2. Heuristic Check  │    │
+                   │  │ 3. Bug Detection    │    │
+                   │  │ 4. Performance      │    │
+                   │  │ 5. Best Practices   │    │
+                   │  ╰─────────────────────╯    │
+                   └─────────────────────────────┘
 ```
 
 ## Quick Start

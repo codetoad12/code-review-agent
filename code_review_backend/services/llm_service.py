@@ -47,7 +47,7 @@ class LLMService:
     def _get_api_key_from_env(self) -> Optional[str]:
         """Get API key from environment variables."""
         env_map = {
-            LLMProvider.GEMINI: 'GEMINI_API_KEY',  # Using your existing env var name
+            LLMProvider.GEMINI: 'GOOGLE_API_KEY',  # Using your existing env var name
             LLMProvider.OPENAI: 'OPENAI_API_KEY', 
             LLMProvider.ANTHROPIC: 'ANTHROPIC_API_KEY'
         }
@@ -69,18 +69,29 @@ class LLMService:
         try:
             from langchain_google_genai import ChatGoogleGenerativeAI
             
-            # LangChain will automatically use GOOGLE_API_KEY from environment
+            # Check API key
+            if not self.api_key:
+                return None
+            
+            # Set GOOGLE_API_KEY for the client (required by Google's client)
+            import os
+            os.environ['GOOGLE_API_KEY'] = self.api_key
+            
             return ChatGoogleGenerativeAI(
-                model='gemini-2.0-flash-lite',  # Updated model name
+                model='gemini-2.0-flash-lite',
                 google_api_key=self.api_key,
-                temperature=0.1,  # Low temperature for consistent code analysis
+                temperature=0.1,
                 max_tokens=1000
             )
-        except ImportError:
-            print('Warning: langchain-google-genai not installed. '
-                  'Install with: pip install langchain-google-genai')
-            print('Using mock responses.')
+            
+        except ImportError as e:
+            print(f'ImportError: langchain-google-genai not available: {e}')
             return None
+        except Exception as e:
+            print(f'ERROR: Failed to initialize Gemini client: {str(e)}')
+            print(f'Error type: {type(e).__name__}')
+            return None
+
     
     def _initialize_openai_client(self):
         """Initialize OpenAI client using LangChain."""
