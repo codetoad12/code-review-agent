@@ -1,3 +1,5 @@
+FROM python:3.11
+
 WORKDIR /app
 
 # Copy only the subfolder (to keep context small)
