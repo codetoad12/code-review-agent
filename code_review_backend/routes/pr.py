@@ -3,7 +3,8 @@ This file contains the routes for Pull Requests.
 """
 import os
 import traceback
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, HttpUrl
@@ -14,12 +15,63 @@ from celery_app import celery_app
 
 
 class AnalyzePRRequest(BaseModel):
-    repo_owner: str
-    repo_name: str
+    repo_url: str
     pr_number: int
+    github_token: Optional[str] = None
  
 
 router = APIRouter()
+
+
+def parse_github_repo_url(repo_url: str) -> tuple[str, str]:
+    """
+    Parse GitHub repository URL to extract owner and repository name.
+    
+    Args:
+        repo_url: GitHub repository URL (e.g., 'https://github.com/user/repo')
+        
+    Returns:
+        Tuple of (repo_owner, repo_name)
+        
+    Raises:
+        ValueError: If URL format is invalid
+    """
+    # Handle SSH format: git@github.com:owner/repo.git
+    if repo_url.startswith('git@github.com:'):
+        path = repo_url.replace('git@github.com:', '').rstrip('.git')
+        parts = path.split('/')
+        if len(parts) == 2:
+            return parts[0], parts[1]
+    
+    # Handle HTTPS/HTTP formats
+    # Add https:// if missing protocol
+    if not repo_url.startswith(('http://', 'https://')):
+        if repo_url.startswith('github.com'):
+            repo_url = 'https://' + repo_url
+        else:
+            repo_url = 'https://github.com/' + repo_url
+    
+    # Parse the URL
+    parsed = urlparse(repo_url)
+    
+    # Check if it's a GitHub URL
+    if parsed.netloc != 'github.com':
+        raise ValueError(f'Not a GitHub URL: {repo_url}')
+    
+    # Extract path components
+    path = parsed.path.strip('/')
+    if path.endswith('.git'):
+        path = path[:-4]  # Remove exactly '.git' from the end
+    parts = path.split('/')
+    
+    # Should have exactly 2 parts: owner/repo
+    if len(parts) != 2 or not all(parts):
+        raise ValueError(
+            f'Invalid GitHub repository URL: {repo_url}. '
+            'Expected format: https://github.com/owner/repo'
+        )
+    
+    return parts[0], parts[1]
 
 
 @router.post('/analyze-pr')
@@ -29,11 +81,22 @@ async def analyze_pr(request: AnalyzePRRequest) -> Dict[str, Any]:
     Returns a task ID for tracking the analysis progress.
     """
     try:
+        # Parse GitHub repository URL
+        try:
+            repo_owner, repo_name = parse_github_repo_url(request.repo_url)
+            print(f"🔍 DEBUG: Parsed URL '{request.repo_url}' → Owner: '{repo_owner}', Repo: '{repo_name}'")
+        except ValueError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=str(e)
+            )
+        
         # Start the async task
         task = analyze_pr_task.delay(
-            request.repo_owner,
-                                            request.repo_name, 
-            request.pr_number
+            repo_owner,
+            repo_name,
+            request.pr_number,
+            request.github_token
         )
         
         return {
@@ -42,6 +105,9 @@ async def analyze_pr(request: AnalyzePRRequest) -> Dict[str, Any]:
             'status': 'pending'
         }
         
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
     except Exception as e:
         print(traceback.format_exc())
         raise HTTPException(
