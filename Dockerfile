@@ -16,5 +16,3 @@ EXPOSE 8000
 
 # Adjust entrypoint if your app file is inside this folder
 CMD ["uvicorn", "code_review_backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
-
-celery -A celery_app worker --loglevel=info
