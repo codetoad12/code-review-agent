@@ -9,6 +9,7 @@ class GithubEndpoint:
         self.repo_name = repo_name
         self.pr_endpoint = "/pulls"
         self.base_url = f"https://api.github.com/repos/{self.repo_owner}/{self.repo_name}"
+        print(f"🔍 DEBUG: GithubEndpoint created with Owner: '{repo_owner}', Repo: '{repo_name}', Base URL: '{self.base_url}'")
         self.pr_comments_endpoint = f"/pulls/{pr_number}/comments"
         self.pr_files_endpoint = f"/pulls/{pr_number}/files"
         self.pr_commits_endpoint = f"/pulls/{pr_number}/commits"
@@ -30,8 +31,9 @@ class GithubEndpoint:
         return f"{self.base_url}{self.pr_reviews_endpoint}"
 
 class GithubClient:
-    def __init__(self, repo_owner: str, repo_name: str, pr_number: int):
-        self.authentication_token = os.getenv("GITHUB_TOKEN")
+    def __init__(self, repo_owner: str, repo_name: str, pr_number: int, github_token: str = None):
+        # Use provided token or fall back to environment variable
+        self.authentication_token = github_token or os.getenv("GITHUB_TOKEN")
         self.repo_owner = repo_owner
         self.repo_name = repo_name
         self.endpoint = GithubEndpoint(pr_number, self.repo_owner, self.repo_name)
@@ -74,11 +76,11 @@ class GithubClient:
         return self._make_request(url, "Failed to fetch PR reviews")
 
 class GithubPrHandler:
-    def __init__(self, repo_owner: str, repo_name: str, pr_number: int):
+    def __init__(self, repo_owner: str, repo_name: str, pr_number: int, github_token: str = None):
         self.repo_owner = repo_owner
         self.repo_name = repo_name
         self.pr_number = pr_number
-        self.github_client = GithubClient(self.repo_owner, self.repo_name, self.pr_number)
+        self.github_client = GithubClient(self.repo_owner, self.repo_name, self.pr_number, github_token)
 
     def format_pr_info(self, pr_info: dict):
         # import ipdb; ipdb.set_trace()
