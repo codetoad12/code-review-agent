@@ -1,0 +1,46 @@
+# Bytecode and Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Local config and secrets
+.env
+*.env
+.env.*
+
+# Editor/IDE files
+.vscode/
+.idea/
+*.swp
+
+# Node.js junk (if you’re linting JS)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Build/test artifacts
+*.log
+*.sqlite3
+*.db
+coverage/
+htmlcov/
+dist/
+build/
+.eggs/
+*.egg-info/
+
+# Docker
+Dockerfile
+docker-compose.yml
