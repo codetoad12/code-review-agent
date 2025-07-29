@@ -9,7 +9,6 @@ class GithubEndpoint:
         self.repo_name = repo_name
         self.pr_endpoint = "/pulls"
         self.base_url = f"https://api.github.com/repos/{self.repo_owner}/{self.repo_name}"
-        print(f"🔍 DEBUG: GithubEndpoint created with Owner: '{repo_owner}', Repo: '{repo_name}', Base URL: '{self.base_url}'")
         self.pr_comments_endpoint = f"/pulls/{pr_number}/comments"
         self.pr_files_endpoint = f"/pulls/{pr_number}/files"
         self.pr_commits_endpoint = f"/pulls/{pr_number}/commits"
@@ -82,61 +81,98 @@ class GithubPrHandler:
         self.pr_number = pr_number
         self.github_client = GithubClient(self.repo_owner, self.repo_name, self.pr_number, github_token)
 
-    def format_pr_info(self, pr_info: dict):
-        # import ipdb; ipdb.set_trace()
+    def format_pr_info(self, pr_info):
+        print(pr_info)
+        # Check if the response contains an error
+        if isinstance(pr_info, dict) and 'error' in pr_info:
+            print(f"Error fetching PR info: {pr_info['error']}")
+            raise Exception(f"Failed to fetch PR info: {pr_info['error']}")
+        
+        # Safely extract nested language information
+        base_obj = pr_info.get('base') or {}
+        repo_obj = base_obj.get('repo') if isinstance(base_obj, dict) else {}
+        language = repo_obj.get('language', '') if isinstance(repo_obj, dict) else ''
+        
         return {
-            "pr_number": pr_info["number"],
-            "pr_title": pr_info["title"],
-            "pr_body": pr_info["body"],
-            "pr_created_at": pr_info["created_at"],
-            "pr_updated_at": pr_info["updated_at"],
-            "language": pr_info['base']['repo']['language'],
-            "state": pr_info["state"],
-            "author_association": pr_info["author_association"],
+            "pr_number": pr_info.get("number", 0),
+            "pr_title": pr_info.get("title", ""),
+            "pr_body": pr_info.get("body", ""),
+            "pr_created_at": pr_info.get("created_at", ""),
+            "pr_updated_at": pr_info.get("updated_at", ""),
+            "language": language,
+            "state": pr_info.get("state", ""),
+            "author_association": pr_info.get("author_association", ""),
             "stats":{
-                "commits": pr_info["commits"],
-                "comments": pr_info["comments"],
-                "additions": pr_info["additions"],
-                "deletions": pr_info["deletions"],
-                "changed_files": pr_info["changed_files"],
-                "review_comments": pr_info["review_comments"],
+                "commits": pr_info.get("commits", 0),
+                "comments": pr_info.get("comments", 0),
+                "additions": pr_info.get("additions", 0),
+                "deletions": pr_info.get("deletions", 0),
+                "changed_files": pr_info.get("changed_files", 0),
+                "review_comments": pr_info.get("review_comments", 0),
             }
         }
 
     def format_pr_files(self, file_info: dict):
         pass
 
-    def format_pr_comments(self, comments: dict):
-        if comments:
-            return {
-                'file':comments['path'],    
-                'line':comments['line'],
-                'comment':comments['body'],
-                'author':comments['user']['login'],
-                'author_association':comments['author_association'],
-            }
+    def format_pr_comments(self, comments):
+        comment_list = []
+        # Check if the response contains an error
+        if isinstance(comments, dict) and 'error' in comments:
+            print(f"Error fetching comments: {comments['error']}")
+            return []
+        
+        if comments and isinstance(comments, list):
+            for comment in comments:
+                # Safely handle nested user object
+                user_obj = comment.get('user') or {}
+                author_login = user_obj.get('login', '') if isinstance(user_obj, dict) else ''
+                
+                comment_list.append({
+                    'file': comment.get('path', ''),    
+                    'line': comment.get('line', 0),
+                    'comment': comment.get('body', ''),
+                    'author': author_login,
+                    'author_association': comment.get(
+                        'author_association', ''
+                    ),
+                })
+            return comment_list
         return []
 
-    def format_pr_commits(self, commits: dict):
+    def format_pr_commits(self, commits):
         commit_list = []
-        if commits:
+        # Check if the response contains an error
+        if isinstance(commits, dict) and 'error' in commits:
+            print(f"Error fetching commits: {commits['error']}")
+            return []
+        
+        if commits and isinstance(commits, list):
             for commit in commits:
-                commit_list.append(commit['commit']['message'])
+                # Safely handle nested commit object
+                commit_obj = commit.get('commit') or {}
+                message = commit_obj.get('message', '') if isinstance(commit_obj, dict) else ''
+                if message:
+                    commit_list.append(message)
             return commit_list
         return []
     
-    def format_file_info(self, file_info: dict):
+    def format_file_info(self, file_info):
         file_list = []
-        if file_info:
-
+        # Check if the response contains an error
+        if isinstance(file_info, dict) and 'error' in file_info:
+            print(f"Error fetching files: {file_info['error']}")
+            return []
+        
+        if file_info and isinstance(file_info, list):
             for file in file_info:
                 file_list.append({
-                    'file_name':file['filename'],
-                    'additions':file['additions'],
-                    'deletions':file['deletions'],
-                    'changes':file['changes'],
-                    'patch':file.get('patch', ''),
-                    'status':file['status'],
+                    'file_name': file.get('filename', ''),
+                    'additions': file.get('additions', 0),
+                    'deletions': file.get('deletions', 0),
+                    'changes': file.get('changes', 0),
+                    'patch': file.get('patch', ''),
+                    'status': file.get('status', ''),
                 })
             return file_list
         return []
@@ -156,8 +192,16 @@ class GithubPrHandler:
             self.github_client.get_pr_comments()
         )
         commits = self.format_pr_commits(self.github_client.get_pr_commits())
-        reviews = self.github_client.get_pr_reviews()
+        
+        # Handle reviews data with error checking
+        reviews_data = self.github_client.get_pr_reviews()
+        if isinstance(reviews_data, dict) and 'error' in reviews_data:
+            print(f"Error fetching reviews: {reviews_data['error']}")
+            reviews = []
+        else:
+            reviews = reviews_data if reviews_data else []
 
-        final_payload = self.create_final_payload(pr_info, file_info, comments, commits, reviews)
+        final_payload = self.create_final_payload(
+            pr_info, file_info, comments, commits, reviews
+        )
         return final_payload
-

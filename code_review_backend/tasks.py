@@ -13,7 +13,7 @@ from agents.base_agent import BaseAgent
 
 
 @celery_app.task(bind=True, name='tasks.analyze_pr_task')
-def analyze_pr_task(self, repo_owner: str, repo_name: str, pr_number: int) -> Dict[str, Any]:
+def analyze_pr_task(self, repo_owner: str, repo_name: str, pr_number: int, github_token: str = None) -> Dict[str, Any]:
     """
     Async task to analyze a Pull Request.
     
@@ -21,6 +21,7 @@ def analyze_pr_task(self, repo_owner: str, repo_name: str, pr_number: int) -> Di
         repo_owner: GitHub repository owner
         repo_name: GitHub repository name  
         pr_number: Pull request number
+        github_token: GitHub API token for authentication
         
     Returns:
         Analysis results or error information
@@ -34,7 +35,7 @@ def analyze_pr_task(self, repo_owner: str, repo_name: str, pr_number: int) -> Di
         
         # Get PR data from GitHub
         try:
-            github_pr_handler = GithubPrHandler(repo_owner, repo_name, pr_number)
+            github_pr_handler = GithubPrHandler(repo_owner, repo_name, pr_number, github_token)
             final_payload = github_pr_handler.format_pr_data_to_pass_to_agent()
         except Exception as e:
             error_msg = f'Failed to fetch PR data: {str(e)}'
