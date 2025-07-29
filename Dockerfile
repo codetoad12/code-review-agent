@@ -2,23 +2,17 @@ FROM python:3.11
 
 WORKDIR /app
 
-# Install only what’s needed, in leaner steps
-RUN apt-get update && apt-get install -y \
-    curl \
-    nodejs \
-    && rm -rf /var/lib/apt/lists/*
+# Copy only the subfolder (to keep context small)
+COPY code_review_backend/ /app
 
-# Install Python dependencies
-COPY requirements.txt .
+# Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy app
-COPY . .
-
-# Create a non-root user
+# Create non-root user
 RUN useradd -m appuser && chown -R appuser:appuser /app
 USER appuser
 
 EXPOSE 8000
 
+# Adjust entrypoint if your app file is inside this folder
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
